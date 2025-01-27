@@ -9,16 +9,10 @@ use App\Http\Controllers\AuthController;
 //    return $request->user();
 //})->middleware('auth:sanctum');
 
-// Email verification routes
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
-        ->middleware('signed')
-        ->name('verification.verify');
-
-    Route::post('email/resend', [AuthController::class, 'resendVerificationEmail'])
-        ->middleware('throttle:6,1')
-        ->name('verification.resend');
-});
+// OTP verification routes
+Route::post('verify-otp', [AuthController::class, 'verifyOtp']);
+Route::post('resend-otp', [AuthController::class, 'resendOtp'])
+    ->middleware('throttle:6,1'); // Limit resend attempts
 
 // Public routes (accessible without authentication)
 Route::apiResource('posts', PostController::class)->only(['index', 'show']);
