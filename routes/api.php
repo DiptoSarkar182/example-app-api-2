@@ -25,3 +25,13 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+
+// update user info
+Route::middleware('auth:sanctum')->group(function () {
+    Route::patch('update-user-info', [AuthController::class, 'updateUserInfo']);
+});
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::patch('update-password', [AuthController::class, 'updateUserPassword']);
+});
+

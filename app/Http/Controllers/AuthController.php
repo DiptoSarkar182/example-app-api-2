@@ -63,12 +63,24 @@ class AuthController extends Controller
               'message'=>'Incorrect credentials'
           ];
       }
-        $token = $user->createToken($user->name);
+      $token = $user->createToken($user->name);
+      $expiresAt = Carbon::now()->addDays(7);
+        $latestToken = $user->tokens()->latest()->first();
+        if ($latestToken) {
+            $latestToken->update(['expires_at' => $expiresAt]); // ✅ Update `expires_at`
+        }
+        $user->tokens()->latest()->first()->update([
+            'expires_at' => $expiresAt
+        ]);
         return [
             'user'=>$user,
-            'token'=>$token
+            'token' => [
+                'accessToken' => $latestToken, // ✅ Include token details from DB
+                'plainTextToken' => $token->plainTextToken, // ✅ Return actual token string
+            ]
         ];
     }
+
     public function logout(Request $request){
         $request->user()->currentAccessToken()->delete();
         return [
@@ -130,5 +142,55 @@ class AuthController extends Controller
             'message' => 'OTP resent successfully.'
         ], 200);
     }
+
+    public function updateUserInfo(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'current_password' => 'required|string',
+        ]);
+
+        $user = $request->user();
+
+        // ✅ Verify the current password before updating
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'message' => 'Incorrect current password.'
+            ], 403);
+        }
+
+        // ✅ Update user info
+        $user->name = $request->name;
+        $user->save();
+
+        return response()->json([
+            'message' => 'User information updated successfully.',
+            'user' => $user
+        ], 200);
+    }
+
+    public function updateUserPassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required|string',
+            'new_password' => 'required|string|min:6|confirmed|different:current_password',
+        ]);
+
+        $user = $request->user();
+
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'message' => 'Incorrect current password.'
+            ], 403);
+        }
+
+        $user->password = Hash::make($request->new_password);
+        $user->save();
+
+        return response()->json([
+            'message' => 'Password updated successfully.'
+        ], 200);
+    }
+
 
 }
