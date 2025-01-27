@@ -9,6 +9,17 @@ use App\Http\Controllers\AuthController;
 //    return $request->user();
 //})->middleware('auth:sanctum');
 
+// Email verification routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
+        ->middleware('signed')
+        ->name('verification.verify');
+
+    Route::post('email/resend', [AuthController::class, 'resendVerificationEmail'])
+        ->middleware('throttle:6,1')
+        ->name('verification.resend');
+});
+
 // Public routes (accessible without authentication)
 Route::apiResource('posts', PostController::class)->only(['index', 'show']);
 

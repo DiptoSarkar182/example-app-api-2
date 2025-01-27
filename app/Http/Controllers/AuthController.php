@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Auth\Events\Registered;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
@@ -15,10 +17,9 @@ class AuthController extends Controller
             'password'=>'required',
         ]);
         $user = User::create($fields);
-        $token = $user->createToken($request->name);
+        event(new Registered($user));
         return [
             'user'=>$user,
-            'token'=>$token
         ];
 
     }
@@ -29,6 +30,12 @@ class AuthController extends Controller
         ]);
 
       $user = User::where('email', $request->email)->first();
+
+        if (!$user->hasVerifiedEmail()) {
+            return response()->json([
+                'message' => 'Please verify your email before logging in.'
+            ], 403);
+        }
 
       if(!$user || !Hash::check($request->password, $user->password)){
           return [
@@ -47,4 +54,35 @@ class AuthController extends Controller
             'message'=>'Logged out.'
         ];
     }
+
+    public function verifyEmail(EmailVerificationRequest $request)
+    {
+        if ($request->user()->hasVerifiedEmail()) {
+            return response()->json([
+                'message' => 'Email already verified.'
+            ], 200);
+        }
+
+        $request->user()->markEmailAsVerified();
+
+        return response()->json([
+            'message' => 'Email verified successfully.'
+        ], 200);
+    }
+
+    public function resendVerificationEmail(Request $request)
+    {
+        if ($request->user()->hasVerifiedEmail()) {
+            return response()->json([
+                'message' => 'Email already verified.'
+            ], 400);
+        }
+
+        $request->user()->sendEmailVerificationNotification();
+
+        return response()->json([
+            'message' => 'Verification email resent.'
+        ], 200);
+    }
+
 }
