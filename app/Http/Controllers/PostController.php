@@ -9,6 +9,7 @@ use GuzzleHttp\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Storage;
 
 class PostController extends Controller
 {
@@ -19,7 +20,22 @@ class PostController extends Controller
      */
     public function index()
     {
-        return Post::all();
+        $posts = Post::all()->map(function ($post) {
+            return [
+                'id' => $post->id,
+                'title' => $post->title,
+                'body' => $post->body,
+                'user_id' => $post->user_id,
+                'created_at' => $post->created_at,
+                'updated_at' => $post->updated_at,
+                'image_url' => $post->image ? asset("storage/{$post->image}") : null, // ✅ Convert to full URL
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'posts' => $posts
+        ], 200);
     }
 
     /**
@@ -33,15 +49,33 @@ class PostController extends Controller
         $fields = $request->validate([
             'title' => 'required|string|max:255',
             'body' => 'required|string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
         ]);
 
-        // Create post for the authenticated user
-        $post = $request->user()->posts()->create($fields);
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            // ✅ Store the uploaded file in `storage/app/public/uploads/`
+            $imagePath = $request->file('image')->store('uploads', 'public');
+        }
+
+        $post = $request->user()->posts()->create([
+            'title' => $fields['title'],
+            'body' => $fields['body'],
+            'image' => $imagePath,
+        ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Post created successfully!',
-            'post' => $post
+            'post' => [
+                'id' => $post->id,
+                'title' => $post->title,
+                'body' => $post->body,
+                'user_id' => $post->user_id,
+                'image_url' => $post->image ? asset("storage/{$post->image}") : null,
+                'created_at' => $post->created_at,
+                'updated_at' => $post->updated_at,
+            ]
         ], 201);
     }
 
@@ -50,34 +84,68 @@ class PostController extends Controller
      */
     public function show(Post $post)
     {
-        return ['post', $post];
+        return response()->json([
+            'success' => true,
+            'post' => [
+                'id' => $post->id,
+                'title' => $post->title,
+                'body' => $post->body,
+                'user_id' => $post->user_id,
+                'created_at' => $post->created_at,
+                'updated_at' => $post->updated_at,
+                'image_url' => $post->image ? asset("storage/{$post->image}") : null, // ✅ Convert to full URL
+            ]
+        ], 200);
     }
 
     /**
      * Update the specified resource in storage.
      */
+    // patch request issue: https://laracasts.com/discuss/channels/requests/patch-requests-with-form-data-parameters-are-not-recognized
     public function update(Request $request, Post $post)
     {
+        // ✅ Authorization Check: Ensure only the post owner can update
         if ($request->user()->id !== $post->user_id) {
             return response()->json([
                 'message' => 'Unauthorized to update this post.'
             ], 403);
         }
 
-        // Validate input fields
+        // ✅ Validate input fields, including optional image upload
         $fields = $request->validate([
             'title' => 'required|string|max:255',
             'body' => 'required|string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
         ]);
 
-        // Update the post
+        // ✅ Check if a new image is uploaded
+        if ($request->hasFile('image')) {
+            // 🔴 Delete the old image before storing the new one
+            if ($post->image) {
+                Storage::disk('public')->delete($post->image);
+            }
+
+            // ✅ Store new image
+            $fields['image'] = $request->file('image')->store('uploads', 'public');
+        }
+
+        // ✅ Update the post
         $post->update($fields);
 
         return response()->json([
             'message' => 'Post updated successfully!',
-            'post' => $post
+            'post' => [
+                'id' => $post->id,
+                'title' => $post->title,
+                'body' => $post->body,
+                'user_id' => $post->user_id,
+                'image_url' => $post->image ? asset("storage/{$post->image}") : null, // ✅ Return full image URL
+                'created_at' => $post->created_at,
+                'updated_at' => $post->updated_at,
+            ]
         ], 200);
     }
+
 
     /**
      * Remove the specified resource from storage.
