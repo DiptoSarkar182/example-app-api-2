@@ -31,7 +31,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('update-user-info', [AuthController::class, 'updateUserInfo']);
 });
 
+// current user password update
 Route::middleware('auth:sanctum')->group(function () {
     Route::patch('update-password', [AuthController::class, 'updateUserPassword']);
 });
 
+Route::post('send-reset-password-instruction', [AuthController::class, 'sendResetPasswordInstruction']);
+Route::post('complete-reset-password', [AuthController::class, 'completeResetPassword']);

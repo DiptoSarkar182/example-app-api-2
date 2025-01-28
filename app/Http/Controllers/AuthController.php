@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
@@ -190,6 +191,47 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Password updated successfully.'
         ], 200);
+    }
+
+    public function sendResetPasswordInstruction(Request $request)
+    {
+        $request->validate(['email' => 'required|email|exists:users,email']);
+
+        $status = Password::sendResetLink($request->only('email'));
+
+        if ($status === Password::RESET_LINK_SENT) {
+            return response()->json(['message' => 'Password reset link sent!'], 200);
+        }
+
+        return response()->json(['message' => 'Error sending reset link.'], 500);
+    }
+
+    public function completeResetPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|exists:users,email',
+            'token' => 'required|string',
+            'password' => 'required|string|min:6|confirmed',
+        ]);
+
+        $status = Password::reset(
+            $request->only('email', 'token', 'password', 'password_confirmation'),
+            function ($user, $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                ])->save();
+            }
+        );
+
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json([
+                'message' => 'Password has been successfully reset!',
+            ], 200);
+        }
+
+        return response()->json([
+            'message' => 'Invalid or expired token.',
+        ], 400);
     }
 
 
