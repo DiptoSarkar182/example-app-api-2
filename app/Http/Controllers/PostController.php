@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\PostCreated;
 use App\Http\Requests\StorePostRequest;
 use App\Http\Requests\UpdatePostRequest;
 use App\Models\Post;
@@ -63,6 +64,8 @@ class PostController extends Controller
             'body' => $fields['body'],
             'image' => $imagePath,
         ]);
+
+        broadcast(new PostCreated($post))->toOthers();
 
         return response()->json([
             'success' => true,
