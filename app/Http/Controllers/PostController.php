@@ -165,4 +165,38 @@ class PostController extends Controller
             'message' => 'Post deleted successfully.'
         ], 200);
     }
+
+    public function currentUserPosts()
+    {
+        // Get authenticated user
+        $user = auth()->user();
+
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        // Fetch posts belonging to the authenticated user
+        $posts = $user->posts()->latest()->get();
+
+        if ($posts->isEmpty()) {
+            return response()->json(['message' => 'No posts found'], 200);
+        }
+
+        // Format the response
+        $formattedPosts = $posts->map(function ($post) {
+            return [
+                'id' => $post->id,
+                'title' => $post->title,
+                'body' => $post->body,
+                'user_id' => $post->user_id,
+                'created_at' => $post->created_at,
+                'updated_at' => $post->updated_at,
+                'image_url' => $post->image ? asset("storage/{$post->image}") : null, // Convert image path to full URL
+            ];
+        });
+
+        return response()->json($formattedPosts);
+    }
+
+
 }

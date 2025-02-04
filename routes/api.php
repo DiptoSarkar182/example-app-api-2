@@ -20,6 +20,7 @@ Route::apiResource('posts', PostController::class)->only(['index', 'show']);
 // Protected routes (require Sanctum authentication)
 Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('posts', PostController::class)->only(['store', 'update', 'destroy']);
+    Route::get('current-user-posts', [PostController::class, 'currentUserPosts']);
 });
 
 Route::post('/register', [AuthController::class, 'register']);
