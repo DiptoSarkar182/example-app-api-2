@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
+use Laravel\Socialite\Facades\Socialite;
 
 class AuthController extends Controller
 {
@@ -232,6 +233,60 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Invalid or expired token.',
         ], 400);
+    }
+
+    public function redirectToGoogle()
+    {
+        return Socialite::driver('google')->stateless()->redirect();
+    }
+
+    public function handleGoogleCallback(Request $request)
+    {
+        try {
+            // Get Google access token from request body
+            $googleToken = $request->input('token');
+
+            // Fetch user data from Google
+            $googleUser = Socialite::driver('google')->stateless()->userFromToken($googleToken);
+
+            // Find existing user by email
+            $user = User::where('email', $googleUser->getEmail())->first();
+
+            if ($user) {
+                // Update Google ID and other details if the user exists
+                $user->update([
+                    'google_id' => $googleUser->getId(),
+                    'name' => $googleUser->getName(), // Optional: Update name if needed
+                ]);
+            } else {
+                // Create new user if no matching email is found
+                $user = User::create([
+                    'name' => $googleUser->getName(),
+                    'email' => $googleUser->getEmail(),
+                    'google_id' => $googleUser->getId(),
+                    'password' => bcrypt(uniqid()), // Random password for new users
+                ]);
+            }
+
+            // Create a Sanctum token
+            $token = $user->createToken($user->name);
+            $expiresAt = Carbon::now()->addDays(7);
+            $latestToken = $user->tokens()->latest()->first();
+            if ($latestToken) {
+                $latestToken->update(['expires_at' => $expiresAt]);
+            }
+
+            return response()->json([
+                'user' => $user,
+                'token' => [
+                    'accessToken' => $latestToken,
+                    'plainTextToken' => $token->plainTextToken,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Authentication failed'], 401);
+        }
     }
 
 

@@ -38,3 +38,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::post('send-reset-password-instruction', [AuthController::class, 'sendResetPasswordInstruction']);
 Route::post('complete-reset-password', [AuthController::class, 'completeResetPassword']);
+
+//google sign in
+Route::get('/auth/google/redirect', [AuthController::class, 'redirectToGoogle']);
+Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
+
