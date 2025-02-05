@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\OpenAiController;
 use App\Http\Controllers\PostController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -44,3 +45,5 @@ Route::post('complete-reset-password', [AuthController::class, 'completeResetPas
 Route::get('/auth/google/redirect', [AuthController::class, 'redirectToGoogle']);
 Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
 
+//openai route
+Route::post('/openai/chat', [OpenAiController::class, 'chat'])->middleware('auth:sanctum');
