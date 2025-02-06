@@ -48,7 +48,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'remember_token',
         'email_otp',
-        'otp_expires_at'
+        'otp_expires_at',
+        'google_id',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
+
     ];
 
     /**
@@ -61,6 +65,7 @@ class User extends Authenticatable implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'two_factor_recovery_codes' => 'array',
         ];
     }
 }

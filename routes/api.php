@@ -47,3 +47,8 @@ Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallbac
 
 //openai route
 Route::post('/openai/chat', [OpenAiController::class, 'chat'])->middleware('auth:sanctum');
+
+//2fa-route
+Route::post('/enable-2fa', [AuthController::class, 'enableTwoFa'])->middleware('auth:sanctum');
+Route::post('/verify-2fa', [AuthController::class, 'verifyTwoFa'])->middleware('auth:sanctum');
+Route::post('/verify-recovery-code', [AuthController::class, 'verifyRecoveryCode'])->middleware('auth:sanctum');

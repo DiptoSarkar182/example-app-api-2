@@ -8,10 +8,13 @@ use Illuminate\Auth\Events\Registered;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
 use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
+use PragmaRX\Google2FA\Google2FA;
 
 class AuthController extends Controller
 {
@@ -47,12 +50,13 @@ class AuthController extends Controller
     }
 
     public function login(Request $request){
-      $request->validate([
-            'email'=>'required|email|exists:users',
-            'password'=>'required',
+        $request->validate([
+            'email' => 'required|email|exists:users',
+            'password' => 'required',
+            'two_factor_code' => 'nullable|numeric' // Allow optional 2FA code input
         ]);
 
-      $user = User::where('email', $request->email)->first();
+        $user = User::where('email', $request->email)->first();
 
         if (!$user->hasVerifiedEmail()) {
             return response()->json([
@@ -60,28 +64,46 @@ class AuthController extends Controller
             ], 403);
         }
 
-      if(!$user || !Hash::check($request->password, $user->password)){
-          return [
-              'message'=>'Incorrect credentials'
-          ];
-      }
-      $token = $user->createToken($user->name);
-      $expiresAt = Carbon::now()->addDays(7);
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Incorrect credentials'], 401);
+        }
+
+        // ✅  Check if 2FA is enabled for this user
+        if (!env('DISABLE_2FA', false)) {
+            // If the user hasn't provided a 2FA code, ask for it
+            if (!$request->has('two_factor_code')) {
+                return response()->json([
+                    'message' => '2FA required. Please enter the 6-digit code from Google Authenticator.'
+                ], 403);
+            }
+
+            // Verify 2FA code
+            $google2fa = new Google2FA();
+            $isValid = $google2fa->verifyKey(decrypt($user->two_factor_secret), $request->two_factor_code);
+
+            if (!$isValid) {
+                return response()->json(['message' => 'Invalid 2FA code'], 403);
+            }
+        }
+
+        // ✅ Generate Token if 2FA is successful or not required
+        $token = $user->createToken($user->name);
+        $expiresAt = Carbon::now()->addDays(7);
+
         $latestToken = $user->tokens()->latest()->first();
         if ($latestToken) {
-            $latestToken->update(['expires_at' => $expiresAt]); // ✅ Update `expires_at`
+            $latestToken->update(['expires_at' => $expiresAt]);
         }
-        $user->tokens()->latest()->first()->update([
-            'expires_at' => $expiresAt
-        ]);
-        return [
-            'user'=>$user,
+
+        return response()->json([
+            'user' => $user,
             'token' => [
-                'accessToken' => $latestToken, // ✅ Include token details from DB
-                'plainTextToken' => $token->plainTextToken, // ✅ Return actual token string
+                'accessToken' => $latestToken,
+                'plainTextToken' => $token->plainTextToken
             ]
-        ];
+        ]);
     }
+
 
     public function logout(Request $request){
         $request->user()->currentAccessToken()->delete();
@@ -289,5 +311,77 @@ class AuthController extends Controller
         }
     }
 
+    public function enableTwoFa(Request $request){
+        $user = Auth::user();
+
+        if ($user->two_factor_secret) {
+            return response()->json(['message' => '2FA already enabled'], 400);
+        }
+
+        $google2fa = new Google2FA();
+
+        $secretKey = $google2fa->generateSecretKey();
+        $user->two_factor_secret = encrypt($secretKey);
+        $user->two_factor_recovery_codes = encrypt(json_encode([
+            Str::random(10) . '-' . Str::random(10),
+            Str::random(10) . '-' . Str::random(10),
+        ]));
+        $user->save();
+
+        return response()->json([
+            'secret' => $secretKey,
+            'qr_url' => "otpauth://totp/YourApp?secret={$secretKey}&issuer=YourApp"
+        ]);
+    }
+
+    public function verifyTwoFa(Request $request){
+        $request->validate([
+            'code' => 'required|numeric',
+        ]);
+
+        $user = Auth::user();
+        if (!$user->two_factor_secret) {
+            return response()->json(['message' => '2FA not enabled'], 400);
+        }
+
+        $google2fa = new Google2FA();
+        $isValid = $google2fa->verifyKey(decrypt($user->two_factor_secret), $request->code);
+
+        if (!$isValid) {
+            return response()->json(['message' => 'Invalid code'], 403);
+        }
+
+        // Generate 8 recovery codes after successful verification
+        $recoveryCodes = [];
+        for ($i = 0; $i < 8; $i++) {
+            $recoveryCodes[] = Str::random(10) . '-' . Str::random(10);
+        }
+
+        // Store the recovery codes and mark 2FA as confirmed
+        $user->two_factor_recovery_codes = encrypt(json_encode($recoveryCodes));
+        $user->two_factor_confirmed_at = now();
+        $user->save();
+
+        return response()->json([
+            'message' => '2FA verified successfully',
+            'recovery_codes' => $recoveryCodes // Return recovery codes to the user
+        ]);
+    }
+
+    public function verifyRecoveryCode(Request $request){
+        $user = Auth::user();
+        $codes = json_decode(decrypt($user->two_factor_recovery_codes), true);
+
+        if (!in_array($request->code, $codes)) {
+            return response()->json(['message' => 'Invalid recovery code'], 403);
+        }
+
+        // Remove the used code
+        $codes = array_diff($codes, [$request->code]);
+        $user->two_factor_recovery_codes = encrypt(json_encode($codes));
+        $user->save();
+
+        return response()->json(['message' => '2FA bypassed with recovery code']);
+    }
 
 }
