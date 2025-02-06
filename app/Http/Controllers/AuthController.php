@@ -53,7 +53,6 @@ class AuthController extends Controller
         $request->validate([
             'email' => 'required|email|exists:users',
             'password' => 'required',
-            'two_factor_code' => 'nullable|numeric' // Allow optional 2FA code input
         ]);
 
         $user = User::where('email', $request->email)->first();
@@ -68,25 +67,16 @@ class AuthController extends Controller
             return response()->json(['message' => 'Incorrect credentials'], 401);
         }
 
-        // ✅  Check if 2FA is enabled for this user
-        if (!env('DISABLE_2FA', false)) {
-            // If the user hasn't provided a 2FA code, ask for it
-            if (!$request->has('two_factor_code')) {
-                return response()->json([
-                    'message' => '2FA required. Please enter the 6-digit code from Google Authenticator.'
-                ], 403);
-            }
-
-            // Verify 2FA code
-            $google2fa = new Google2FA();
-            $isValid = $google2fa->verifyKey(decrypt($user->two_factor_secret), $request->two_factor_code);
-
-            if (!$isValid) {
-                return response()->json(['message' => 'Invalid 2FA code'], 403);
-            }
+        // ✅ Check if user has 2FA enabled
+        if ($user->two_factor_secret) {
+            return response()->json([
+                'success' => true,
+                'status' => 200,
+                'message' => 'Please provide the OTP.',
+            ]);
         }
 
-        // ✅ Generate Token if 2FA is successful or not required
+        // ✅ If no 2FA is enabled, proceed with issuing token
         $token = $user->createToken($user->name);
         $expiresAt = Carbon::now()->addDays(7);
 
@@ -96,7 +86,50 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'user' => $user,
+            'user' => $user->makeHidden(['two_factor_secret', 'two_factor_recovery_codes']),
+            'token' => [
+                'accessToken' => $latestToken,
+                'plainTextToken' => $token->plainTextToken
+            ]
+        ]);
+    }
+
+    public function verifyLoginOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|exists:users,email',
+            'two_factor_code' => 'required|numeric'
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        if (!$user->two_factor_secret) {
+            return response()->json(['message' => '2FA is not enabled for this user'], 400);
+        }
+
+        // ✅ Verify the 2FA code
+        $google2fa = new Google2FA();
+        $isValid = $google2fa->verifyKey(decrypt($user->two_factor_secret), $request->two_factor_code);
+
+        if (!$isValid) {
+            return response()->json(['message' => 'Invalid 2FA code'], 403);
+        }
+
+        // ✅ If 2FA is correct, issue the access token
+        $token = $user->createToken($user->name);
+        $expiresAt = Carbon::now()->addDays(7);
+
+        $latestToken = $user->tokens()->latest()->first();
+        if ($latestToken) {
+            $latestToken->update(['expires_at' => $expiresAt]);
+        }
+
+        return response()->json([
+            'user' => $user->makeHidden(['two_factor_secret', 'two_factor_recovery_codes']), // Hide sensitive fields
             'token' => [
                 'accessToken' => $latestToken,
                 'plainTextToken' => $token->plainTextToken
