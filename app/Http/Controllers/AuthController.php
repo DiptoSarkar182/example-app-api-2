@@ -86,7 +86,7 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'user' => $user->makeHidden(['two_factor_secret', 'two_factor_recovery_codes']),
+            'user' => $user,
             'token' => [
                 'accessToken' => $latestToken,
                 'plainTextToken' => $token->plainTextToken
@@ -344,26 +344,40 @@ class AuthController extends Controller
         }
     }
 
-    public function enableTwoFa(Request $request){
+    public function enableTwoFa(Request $request)
+    {
         $user = Auth::user();
 
-        if ($user->two_factor_secret) {
+        // Validate the current password
+        $request->validate([
+            'password' => 'required',
+        ]);
+
+        if (!Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Invalid password'], 403);
+        }
+
+        // Check if 2FA is already confirmed
+        if ($user->two_factor_secret && $user->two_factor_confirmed_at) {
             return response()->json(['message' => '2FA already enabled'], 400);
         }
 
+        // Generate a new secret key and recovery codes
         $google2fa = new Google2FA();
-
         $secretKey = $google2fa->generateSecretKey();
+
         $user->two_factor_secret = encrypt($secretKey);
         $user->two_factor_recovery_codes = encrypt(json_encode([
             Str::random(10) . '-' . Str::random(10),
             Str::random(10) . '-' . Str::random(10),
         ]));
+        $user->two_factor_confirmed_at = null; // Reset confirmation status
         $user->save();
 
+        // Return the secret key and QR code URL
         return response()->json([
             'secret' => $secretKey,
-            'qr_url' => "otpauth://totp/YourApp?secret={$secretKey}&issuer=YourApp"
+            'qr_url' => "otpauth://totp/example-app?secret={$secretKey}&issuer={$user->email}"
         ]);
     }
 
@@ -401,20 +415,102 @@ class AuthController extends Controller
         ]);
     }
 
-    public function verifyRecoveryCode(Request $request){
+    public function showRecoveryCodes()
+    {
         $user = Auth::user();
+
+        // Check if 2FA is enabled and recovery codes exist
+        if (!$user->two_factor_secret) {
+            return response()->json(['message' => '2FA is not enabled'], 400);
+        }
+
+        if (!$user->two_factor_recovery_codes) {
+            return response()->json(['message' => 'No recovery codes found'], 404);
+        }
+
+        // Decrypt and return the recovery codes
+        $recoveryCodes = json_decode(decrypt($user->two_factor_recovery_codes), true);
+
+        return response()->json([
+            'recovery_codes' => $recoveryCodes
+        ]);
+    }
+
+    public function regenerateRecoveryCodes()
+    {
+        $user = Auth::user();
+
+        // Check if 2FA is enabled
+        if (!$user->two_factor_secret) {
+            return response()->json(['message' => '2FA is not enabled'], 400);
+        }
+
+        // Generate new recovery codes
+        $newRecoveryCodes = [];
+        for ($i = 0; $i < 8; $i++) {
+            $newRecoveryCodes[] = Str::random(10) . '-' . Str::random(10);
+        }
+
+        // Save the new recovery codes in the database
+        $user->two_factor_recovery_codes = encrypt(json_encode($newRecoveryCodes));
+        $user->save();
+
+        // Return the new recovery codes
+        return response()->json([
+            'message' => 'Recovery codes regenerated successfully',
+            'recovery_codes' => $newRecoveryCodes
+        ]);
+    }
+
+
+    public function loginWithRecoveryCode(Request $request)
+    {
+        $user = Auth::user();
+
+        // Decrypt recovery codes
         $codes = json_decode(decrypt($user->two_factor_recovery_codes), true);
 
+        // Check if the provided code is valid
         if (!in_array($request->code, $codes)) {
             return response()->json(['message' => 'Invalid recovery code'], 403);
         }
 
-        // Remove the used code
-        $codes = array_diff($codes, [$request->code]);
+        // Replace the used recovery code with a new one
+        $codes = array_map(function ($code) use ($request) {
+            return $code === $request->code ? Str::random(10) . '-' . Str::random(10) : $code;
+        }, $codes);
+
+        // Update recovery codes in the database
         $user->two_factor_recovery_codes = encrypt(json_encode($codes));
         $user->save();
 
-        return response()->json(['message' => '2FA bypassed with recovery code']);
+        // Generate a login token
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'message' => '2FA bypassed with recovery code',
+            'user' => $user,
+            'token' => $token,
+        ]);
     }
+
+    public function disable2FA()
+    {
+        $user = Auth::user();
+
+        // Check if 2FA is enabled
+        if (!$user->two_factor_secret) {
+            return response()->json(['message' => '2FA is not enabled'], 400);
+        }
+
+        // Disable 2FA by setting related fields to null
+        $user->two_factor_secret = null;
+        $user->two_factor_recovery_codes = null;
+        $user->two_factor_confirmed_at = null;
+        $user->save();
+
+        return response()->json(['message' => '2FA has been disabled successfully']);
+    }
+
 
 }

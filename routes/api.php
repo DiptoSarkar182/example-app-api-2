@@ -50,6 +50,13 @@ Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallbac
 Route::post('/openai/chat', [OpenAiController::class, 'chat'])->middleware('auth:sanctum');
 
 //2fa-route
+Route::get('/show-recovery-codes', [AuthController::class, 'showRecoveryCodes'])
+    ->middleware('auth:sanctum');
 Route::post('/enable-2fa', [AuthController::class, 'enableTwoFa'])->middleware('auth:sanctum');
 Route::post('/verify-2fa', [AuthController::class, 'verifyTwoFa'])->middleware('auth:sanctum');
-Route::post('/verify-recovery-code', [AuthController::class, 'verifyRecoveryCode'])->middleware('auth:sanctum');
+Route::post('/login-with-recovery-code', [AuthController::class, 'loginWithRecoveryCode'])
+    ->middleware('auth:sanctum');
+Route::post('/regenerate-recovery-code', [AuthController::class, 'regenerateRecoveryCodes'])
+    ->middleware('auth:sanctum');
+Route::post('/disable-2FA', [AuthController::class, 'disable2FA'])
+    ->middleware('auth:sanctum');
