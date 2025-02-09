@@ -68,7 +68,7 @@ class AuthController extends Controller
         }
 
         // ✅ Check if user has 2FA enabled
-        if ($user->two_factor_secret) {
+        if ($user->two_factor_confirmed_at) {
             return response()->json([
                 'success' => true,
                 'status' => 200,
