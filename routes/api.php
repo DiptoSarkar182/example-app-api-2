@@ -60,3 +60,6 @@ Route::post('/regenerate-recovery-code', [AuthController::class, 'regenerateReco
     ->middleware('auth:sanctum');
 Route::post('/disable-2FA', [AuthController::class, 'disable2FA'])
     ->middleware('auth:sanctum');
+Route::post('/send-sms', [AuthController::class, 'sendSMS'])
+    ->middleware('auth:sanctum');
+

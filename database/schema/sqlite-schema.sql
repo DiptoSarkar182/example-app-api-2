@@ -3,20 +3,6 @@ CREATE TABLE IF NOT EXISTS "migrations"(
   "migration" varchar not null,
   "batch" integer not null
 );
-CREATE TABLE IF NOT EXISTS "users"(
-  "id" integer primary key autoincrement not null,
-  "name" varchar not null,
-  "email" varchar not null,
-  "email_verified_at" datetime,
-  "password" varchar not null,
-  "remember_token" varchar,
-  "created_at" datetime,
-  "updated_at" datetime,
-  "email_otp" varchar,
-  "otp_expires_at" datetime,
-  "google_id" varchar
-);
-CREATE UNIQUE INDEX "users_email_unique" on "users"("email");
 CREATE TABLE IF NOT EXISTS "password_reset_tokens"(
   "email" varchar not null,
   "token" varchar not null,
@@ -108,6 +94,25 @@ CREATE TABLE IF NOT EXISTS "posts"(
   "image" varchar,
   foreign key("user_id") references "users"("id") on delete cascade
 );
+CREATE TABLE IF NOT EXISTS "users"(
+  "id" integer primary key autoincrement not null,
+  "name" varchar not null,
+  "email" varchar not null,
+  "email_verified_at" datetime,
+  "password" varchar not null,
+  "remember_token" varchar,
+  "created_at" datetime,
+  "updated_at" datetime,
+  "email_otp" varchar,
+  "otp_expires_at" datetime,
+  "google_id" varchar,
+  "two_factor_secret" text,
+  "two_factor_recovery_codes" text,
+  "two_factor_confirmed_at" datetime,
+  "contact_number" varchar
+);
+CREATE UNIQUE INDEX "users_email_unique" on "users"("email");
+CREATE UNIQUE INDEX "users_contact_number_unique" on "users"("contact_number");
 
 INSERT INTO migrations VALUES(1,'0001_01_01_000000_create_users_table',1);
 INSERT INTO migrations VALUES(2,'0001_01_01_000001_create_cache_table',1);
@@ -118,3 +123,5 @@ INSERT INTO migrations VALUES(7,'2025_01_27_084716_add_user_id_to_posts',4);
 INSERT INTO migrations VALUES(8,'2025_01_27_111925_add_email_otp_to_users',5);
 INSERT INTO migrations VALUES(9,'2025_01_28_085107_add_image_to_posts',6);
 INSERT INTO migrations VALUES(10,'2025_02_04_072023_add_google_id',7);
+INSERT INTO migrations VALUES(11,'2025_02_06_113151_add_two_factor_auth_to_users_table',8);
+INSERT INTO migrations VALUES(13,'2025_02_10_075944_add_contact_number',9);

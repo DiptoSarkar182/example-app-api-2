@@ -512,5 +512,90 @@ class AuthController extends Controller
         return response()->json(['message' => '2FA has been disabled successfully']);
     }
 
+    public function sendSMS(Request $request)
+    {
+        // Validate the input
+        $request->validate([
+            'email' => 'required|email|exists:users,email', // Ensure the email exists in the database
+        ]);
+
+        // Find the user by email
+        $user = \App\Models\User::where('email', $request->email)->first();
+
+        if (!$user || !$user->contact_number) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User does not have a contact number.',
+            ], 404);
+        }
+
+        // Generate OTP and expiry time
+        $otp = rand(100000, 999999); // Generate a 6-digit OTP
+        $otpExpiresAt = now()->addMinutes(20); // Set expiry time to 20 minutes from now
+
+        // Update the user's OTP and expiry time in the database
+        $user->update([
+            'email_otp' => $otp,
+            'otp_expires_at' => $otpExpiresAt,
+        ]);
+
+        // Extract parameters for SMS API
+        $apiKey = env('BULK_SMS_API_KEY'); // Your API key
+        $msg = "Your OTP code is: $otp. It will expire in 20 minutes."; // OTP message
+        $to = $user->contact_number; // User's contact number
+
+        // API URL
+        $url = 'https://api.sms.net.bd/sendsms';
+
+        // Prepare the cURL request
+        $curl = curl_init();
+
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST => 'POST',
+            CURLOPT_POSTFIELDS => [
+                'api_key' => $apiKey,
+                'msg' => $msg,
+                'to' => $to,
+            ],
+        ]);
+
+        // Execute the request
+        $response = curl_exec($curl);
+
+        // Handle errors or close cURL
+        if (curl_errno($curl)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send SMS: ' . curl_error($curl),
+            ], 500);
+        }
+
+        curl_close($curl);
+
+        // Decode API response (assuming it's JSON)
+        $responseData = json_decode($response, true);
+
+        // Handle API response
+        if (isset($responseData['error']) && $responseData['error'] == 0) {
+            return response()->json([
+                'success' => true,
+                'message' => 'OTP sent successfully!',
+                'data' => [
+                    'otp' => $otp, // For testing purposes only; remove in production
+                    'expires_at' => $otpExpiresAt,
+                ],
+            ]);
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => $responseData['msg'] ?? 'Failed to send SMS.',
+            ], 400);
+        }
+    }
+
+
+
 
 }
