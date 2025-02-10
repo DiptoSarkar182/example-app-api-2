@@ -63,3 +63,9 @@ Route::post('/disable-2FA', [AuthController::class, 'disable2FA'])
 Route::post('/send-sms', [AuthController::class, 'sendSMS'])
     ->middleware('auth:sanctum');
 
+Route::post('/send-account-recovery-request', [AuthController::class, 'accountRecoveryRequest']);
+Route::post('/submit-account-recovery-request', [AuthController::class, 'submitAccountRecoveryRequest']);
+Route::post('/process-account-recovery-request', [AuthController::class, 'processRecoveryRequest'])
+    ->middleware('auth:sanctum');
+
+

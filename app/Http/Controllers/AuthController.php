@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\AccountRecoveryOtpMail;
 use App\Mail\VerifyEmailOtpMail;
+use App\Models\AccountRecovery;
 use Carbon\Carbon;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
@@ -520,7 +522,7 @@ class AuthController extends Controller
         ]);
 
         // Find the user by email
-        $user = \App\Models\User::where('email', $request->email)->first();
+        $user = User::where('email', $request->email)->first();
 
         if (!$user || !$user->contact_number) {
             return response()->json([
@@ -595,6 +597,132 @@ class AuthController extends Controller
         }
     }
 
+    public function accountRecoveryRequest(Request $request)
+    {
+        // Validate the email input
+        $request->validate([
+            'email' => 'required|email|exists:users,email', // Ensure email exists in the users table
+        ]);
+
+        // Find the user by email
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found.',
+            ], 404);
+        }
+
+        // Generate a 6-digit OTP
+        $otp = rand(100000, 999999);
+
+        // Set OTP expiry time (20 minutes from now)
+        $otpExpiresAt = now()->addMinutes(20);
+
+        // Save the OTP and expiry time in the database
+        $user->update([
+            'email_otp' => $otp,
+            'otp_expires_at' => $otpExpiresAt,
+        ]);
+
+        // Send the OTP via email
+        try {
+            Mail::to($user->email)->send(new AccountRecoveryOtpMail($otp));
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send OTP email. Please try again.',
+            ], 500);
+        }
+
+        // Return success response
+        return response()->json([
+            'success' => true,
+            'message' => 'OTP sent successfully to your email.',
+        ]);
+    }
+
+    public function submitAccountRecoveryRequest(Request $request)
+    {
+        // Validate the input
+        $request->validate([
+            'email' => 'required|email|exists:users,email', // Ensure the email exists
+            'otp' => 'required|string', // OTP must be provided
+        ]);
+
+        // Find the user by email
+        $user = User::where('email', $request->email)->first();
+
+        // Check if the user has an existing recovery request
+        if ($user->accountRecoveryRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You already have an account recovery request pending.',
+            ], 400);
+        }
+
+        // Verify the OTP
+        if ($user->email_otp !== $request->otp || $user->otp_expires_at < now()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired OTP.',
+            ], 400);
+        }
+
+        // Create a new account recovery record
+        $accountRecovery = AccountRecovery::create([
+            'user_id' => $user->id,
+        ]);
+
+        // Return success response
+        return response()->json([
+            'success' => true,
+            'message' => 'Account recovery request submitted successfully.',
+            'data' => $accountRecovery,
+        ]);
+    }
+
+    public function processRecoveryRequest(Request $request)
+    {
+        // Validate the input
+        $request->validate([
+            'user_id' => 'required|exists:users,id', // Ensure the user ID exists
+        ]);
+
+        // Check if the authenticated user is admin
+        $admin = auth()->user();
+        if ($admin->email !== 'dipto@gmail.com') {
+            return response()->json([
+                'success' => false,
+                'message' => 'You are not authorized to process recovery requests.',
+            ], 403);
+        }
+
+        // Find the user by ID
+        $user = User::findOrFail($request->user_id);
+
+        // Nullify the 2FA-related columns for the user
+        $user->update([
+            'two_factor_secret' => null,
+            'two_factor_recovery_codes' => null,
+            'two_factor_confirmed_at' => null,
+        ]);
+
+        // Update the account recovery record's approval status to true
+        $accountRecovery = AccountRecovery::where('user_id', $user->id)->first();
+        if ($accountRecovery) {
+            $accountRecovery->update([
+                'approve' => true,
+            ]);
+        }
+
+        // Return success response
+        return response()->json([
+            'success' => true,
+            'message' => 'Account recovery request processed successfully.',
+        ]);
+    }
 
 
 

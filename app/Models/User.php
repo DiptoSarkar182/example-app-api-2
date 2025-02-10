@@ -20,6 +20,9 @@ class User extends Authenticatable implements MustVerifyEmail
     public function posts(){
         return $this->hasMany(Post::class);
     }
+    public function accountRecoveryRequest(){
+        return $this->hasOne(AccountRecovery::class);
+    }
     public function sendPasswordResetNotification($token)
     {
         $this->notify(new ResetPasswordNotification($token));
@@ -37,6 +40,9 @@ class User extends Authenticatable implements MustVerifyEmail
         'email_otp',
         'otp_expires_at',
         'google_id',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
+        'two_factor_confirmed_at',
     ];
 
     /**

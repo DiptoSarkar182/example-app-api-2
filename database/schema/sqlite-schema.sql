@@ -113,6 +113,14 @@ CREATE TABLE IF NOT EXISTS "users"(
 );
 CREATE UNIQUE INDEX "users_email_unique" on "users"("email");
 CREATE UNIQUE INDEX "users_contact_number_unique" on "users"("contact_number");
+CREATE TABLE IF NOT EXISTS "account_recoveries"(
+  "id" integer primary key autoincrement not null,
+  "user_id" integer not null default '',
+  "approve" tinyint(1) not null default '0',
+  "created_at" datetime,
+  "updated_at" datetime,
+  foreign key("user_id") references "users"("id") on delete cascade
+);
 
 INSERT INTO migrations VALUES(1,'0001_01_01_000000_create_users_table',1);
 INSERT INTO migrations VALUES(2,'0001_01_01_000001_create_cache_table',1);
@@ -125,3 +133,4 @@ INSERT INTO migrations VALUES(9,'2025_01_28_085107_add_image_to_posts',6);
 INSERT INTO migrations VALUES(10,'2025_02_04_072023_add_google_id',7);
 INSERT INTO migrations VALUES(11,'2025_02_06_113151_add_two_factor_auth_to_users_table',8);
 INSERT INTO migrations VALUES(13,'2025_02_10_075944_add_contact_number',9);
+INSERT INTO migrations VALUES(14,'2025_02_10_103544_create_account_recoveries_table',10);
