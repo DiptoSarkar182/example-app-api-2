@@ -28,6 +28,8 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOtp']);
+Route::get('/current-user-sessions', [AuthController::class, 'currentUserSessions'])
+    ->middleware('auth:sanctum');
 
 // update user info
 Route::middleware('auth:sanctum')->group(function () {

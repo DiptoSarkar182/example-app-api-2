@@ -11,6 +11,7 @@ use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
@@ -53,7 +54,7 @@ class AuthController extends Controller
 
     public function login(Request $request){
         $request->validate([
-            'email' => 'required|email|exists:users',
+            'email' => 'required|email|exists:users,email',
             'password' => 'required',
         ]);
 
@@ -87,6 +88,19 @@ class AuthController extends Controller
             $latestToken->update(['expires_at' => $expiresAt]);
         }
 
+        // ✅ Store Session Manually
+        DB::table('sessions')->insert([
+            'id' => session()->getId(), // Generate a session ID
+            'user_id' => $user->id,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->header('User-Agent'),
+            'payload' => base64_encode(json_encode([
+                'token' => $token->plainTextToken,
+                'expires_at' => $expiresAt
+            ])), // Store the token info securely
+            'last_activity' => Carbon::now()->timestamp
+        ]);
+
         return response()->json([
             'user' => $user,
             'token' => [
@@ -95,6 +109,7 @@ class AuthController extends Controller
             ]
         ]);
     }
+
 
     public function verifyLoginOtp(Request $request)
     {
@@ -130,6 +145,19 @@ class AuthController extends Controller
             $latestToken->update(['expires_at' => $expiresAt]);
         }
 
+        // ✅ Store Session Manually
+        DB::table('sessions')->insert([
+            'id' => session()->getId(), // Generate a session ID
+            'user_id' => $user->id,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->header('User-Agent'),
+            'payload' => base64_encode(json_encode([
+                'token' => $token->plainTextToken,
+                'expires_at' => $expiresAt
+            ])), // Store the token info securely
+            'last_activity' => Carbon::now()->timestamp
+        ]);
+
         return response()->json([
             'user' => $user->makeHidden(['two_factor_secret', 'two_factor_recovery_codes']), // Hide sensitive fields
             'token' => [
@@ -141,10 +169,74 @@ class AuthController extends Controller
 
 
     public function logout(Request $request){
-        $request->user()->currentAccessToken()->delete();
-        return [
-            'message'=>'Logged out.'
-        ];
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Not authenticated'], 401);
+        }
+
+        // Get the current token model
+        $currentToken = $user->currentAccessToken();
+
+        if (!$currentToken) {
+            return response()->json(['message' => 'No active session found'], 404);
+        }
+
+        $tokenId = $currentToken->id; // Get token ID (e.g., 23)
+
+        // Retrieve all user sessions
+        $sessions = DB::table('sessions')->where('user_id', $user->id)->get();
+
+        foreach ($sessions as $session) {
+            $payload = json_decode(base64_decode($session->payload), true);
+
+            if (isset($payload['token'])) {
+                // Extract the first part before "|" (token ID) and compare
+                $storedTokenParts = explode('|', $payload['token']);
+                $storedTokenId = $storedTokenParts[0] ?? null; // Get token ID from session
+
+                if ($storedTokenId == $tokenId) {
+                    DB::table('sessions')->where('id', $session->id)->delete();
+                    break;
+                }
+            }
+        }
+
+        // Revoke the current token
+        $currentToken->delete();
+
+        return response()->json(['message' => 'Logged out successfully.']);
+    }
+
+    public function currentUserSessions(Request $request)
+    {
+        // Get the current authenticated user
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json(['message' => 'User not authenticated'], 401);
+        }
+
+        // Retrieve all sessions associated with the current user
+        $sessions = DB::table('sessions')->where('user_id', $user->id)->get();
+
+        // Prepare sessions for response
+        $formattedSessions = $sessions->map(function ($session) {
+            $payload = json_decode(base64_decode($session->payload), true);
+
+            // Optionally, you can format the session data
+            return [
+                'id' => $session->id,
+                'ip_address' => $session->ip_address,
+                'user_agent' => $session->user_agent,
+                'last_activity' => Carbon::createFromTimestamp($session->last_activity)->toDateTimeString(),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'sessions' => $formattedSessions
+        ]);
     }
 
     public function verifyOtp(Request $request)
