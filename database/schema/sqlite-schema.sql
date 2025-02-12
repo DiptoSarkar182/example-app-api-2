@@ -121,6 +121,57 @@ CREATE TABLE IF NOT EXISTS "account_recoveries"(
   "updated_at" datetime,
   foreign key("user_id") references "users"("id") on delete cascade
 );
+CREATE TABLE IF NOT EXISTS "permissions"(
+  "id" integer primary key autoincrement not null,
+  "name" varchar not null,
+  "guard_name" varchar not null,
+  "created_at" datetime,
+  "updated_at" datetime
+);
+CREATE UNIQUE INDEX "permissions_name_guard_name_unique" on "permissions"(
+  "name",
+  "guard_name"
+);
+CREATE TABLE IF NOT EXISTS "roles"(
+  "id" integer primary key autoincrement not null,
+  "name" varchar not null,
+  "guard_name" varchar not null,
+  "created_at" datetime,
+  "updated_at" datetime
+);
+CREATE UNIQUE INDEX "roles_name_guard_name_unique" on "roles"(
+  "name",
+  "guard_name"
+);
+CREATE TABLE IF NOT EXISTS "model_has_permissions"(
+  "permission_id" integer not null,
+  "model_type" varchar not null,
+  "model_id" integer not null,
+  foreign key("permission_id") references "permissions"("id") on delete cascade,
+  primary key("permission_id", "model_id", "model_type")
+);
+CREATE INDEX "model_has_permissions_model_id_model_type_index" on "model_has_permissions"(
+  "model_id",
+  "model_type"
+);
+CREATE TABLE IF NOT EXISTS "model_has_roles"(
+  "role_id" integer not null,
+  "model_type" varchar not null,
+  "model_id" integer not null,
+  foreign key("role_id") references "roles"("id") on delete cascade,
+  primary key("role_id", "model_id", "model_type")
+);
+CREATE INDEX "model_has_roles_model_id_model_type_index" on "model_has_roles"(
+  "model_id",
+  "model_type"
+);
+CREATE TABLE IF NOT EXISTS "role_has_permissions"(
+  "permission_id" integer not null,
+  "role_id" integer not null,
+  foreign key("permission_id") references "permissions"("id") on delete cascade,
+  foreign key("role_id") references "roles"("id") on delete cascade,
+  primary key("permission_id", "role_id")
+);
 
 INSERT INTO migrations VALUES(1,'0001_01_01_000000_create_users_table',1);
 INSERT INTO migrations VALUES(2,'0001_01_01_000001_create_cache_table',1);
@@ -134,3 +185,4 @@ INSERT INTO migrations VALUES(10,'2025_02_04_072023_add_google_id',7);
 INSERT INTO migrations VALUES(11,'2025_02_06_113151_add_two_factor_auth_to_users_table',8);
 INSERT INTO migrations VALUES(13,'2025_02_10_075944_add_contact_number',9);
 INSERT INTO migrations VALUES(14,'2025_02_10_103544_create_account_recoveries_table',10);
+INSERT INTO migrations VALUES(15,'2025_02_11_070711_create_permission_tables',11);
