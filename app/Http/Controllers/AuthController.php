@@ -11,6 +11,7 @@ use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -52,7 +53,8 @@ class AuthController extends Controller
         ], 201);
     }
 
-    public function login(Request $request){
+    public function login(Request $request)
+    {
         $request->validate([
             'email' => 'required|email|exists:users,email',
             'password' => 'required',
@@ -66,20 +68,44 @@ class AuthController extends Controller
             ], 403);
         }
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        if (!Hash::check($request->password, $user->password)) {
             return response()->json(['message' => 'Incorrect credentials'], 401);
         }
 
+        $sessionId = session()->getId();
+        $ipAddress = $request->ip();
+        $userAgent = $request->header('User-Agent');
+        $lastActivity = Carbon::now()->timestamp;
+
         // ✅ Check if user has 2FA enabled
         if ($user->two_factor_confirmed_at) {
+            $sessionData = [
+                'email' => $user->email,
+                '2fa_required' => true,
+                'session_id' => $sessionId,
+            ];
+
+            // Encrypt and set the cookie
+            $cookie = cookie(
+                '_2fa_session',
+                encrypt(json_encode($sessionData)),
+                15, // Expire in 15 minutes
+                '/',
+                null,
+                config('session.secure'),
+                config('session.http_only'),
+                false,
+                config('session.same_site')
+            );
+
             return response()->json([
                 'success' => true,
                 'status' => 200,
                 'message' => 'Please provide the OTP.',
-            ]);
+            ])->withCookie($cookie);
         }
 
-        // ✅ If no 2FA is enabled, proceed with issuing token
+        // ✅ If no 2FA is enabled, issue a token and store session
         $token = $user->createToken($user->name);
         $expiresAt = Carbon::now()->addDays(7);
 
@@ -88,37 +114,51 @@ class AuthController extends Controller
             $latestToken->update(['expires_at' => $expiresAt]);
         }
 
-        // ✅ Store Session Manually
         DB::table('sessions')->insert([
-            'id' => session()->getId(), // Generate a session ID
+            'id' => $sessionId,
             'user_id' => $user->id,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->header('User-Agent'),
+            'ip_address' => $ipAddress,
+            'user_agent' => $userAgent,
             'payload' => base64_encode(json_encode([
                 'token' => $token->plainTextToken,
-                'expires_at' => $expiresAt
-            ])), // Store the token info securely
-            'last_activity' => Carbon::now()->timestamp
+                'expires_at' => $expiresAt,
+            ])),
+            'last_activity' => $lastActivity,
         ]);
 
         return response()->json([
             'user' => $user,
             'token' => [
                 'accessToken' => $latestToken,
-                'plainTextToken' => $token->plainTextToken
+                'plainTextToken' => $token->plainTextToken,
             ]
         ]);
     }
 
-
     public function verifyLoginOtp(Request $request)
     {
         $request->validate([
-            'email' => 'required|email|exists:users,email',
-            'two_factor_code' => 'required|numeric'
+            'two_factor_code' => 'required|numeric',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        // ✅ Retrieve and validate the `_2fa_session` cookie
+        $cookie = $request->cookie('_2fa_session');
+        if (!$cookie) {
+            return response()->json(['message' => '2FA session cookie is missing or expired'], 403);
+        }
+
+        try {
+            $sessionData = json_decode(Crypt::decrypt($cookie), true);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Invalid 2FA session cookie'], 403);
+        }
+
+        // Validate session state
+        if (empty($sessionData['2fa_required']) || !$sessionData['2fa_required']) {
+            return response()->json(['message' => '2FA is not required for this session'], 403);
+        }
+
+        $user = User::where('email', $sessionData['email'])->first();
 
         if (!$user) {
             return response()->json(['message' => 'User not found'], 404);
@@ -158,13 +198,14 @@ class AuthController extends Controller
             'last_activity' => Carbon::now()->timestamp
         ]);
 
+        // Clear the `_2fa_session` cookie after successful login
         return response()->json([
             'user' => $user->makeHidden(['two_factor_secret', 'two_factor_recovery_codes']), // Hide sensitive fields
             'token' => [
                 'accessToken' => $latestToken,
                 'plainTextToken' => $token->plainTextToken
             ]
-        ]);
+        ])->withCookie(cookie()->forget('_2fa_session'));
     }
 
 
